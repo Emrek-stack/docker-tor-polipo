@@ -22,6 +22,10 @@ RUN /usr/local/go/bin/go get
 RUN /usr/local/go/bin/go build -o /usr/bin/snowflake-client
 RUN chmod +x /usr/bin/snowflake-client
 
+# privoxy
+RUN apt install -y privoxy
+ADD privoxy/config /etc/privoxy/
+RUN chmod +r /etc/privoxy/config
 
  # Polipo
 RUN git clone --progress --verbose https://github.com/jech/polipo.git /data/polipo
@@ -44,7 +48,8 @@ COPY docker-entrypoint.sh /etc/docker-entrypoint.sh
 RUN chmod +x /etc/docker-entrypoint.sh
 ENTRYPOINT ["tini", "--", "/etc/docker-entrypoint.sh"]
 
+
 USER root
 
 
-EXPOSE 8123
+EXPOSE 8123 8118
