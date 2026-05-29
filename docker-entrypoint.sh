@@ -1,17 +1,50 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
 
+TOR_CONFFILE=/etc/tor/torrc
+RUNTIME_TOR_CONFFILE=/run/torrc
 PRIVOXY_CONFFILE=/etc/privoxy/config
-PRIVOXY_PIDFILE=/var/run/privoxy.pid
+PRIVOXY_PIDFILE=/run/privoxy.pid
+TOR_CONTROL_PORT="${TOR_CONTROL_PORT:-9051}"
+TOR_CONTROL_INTERNAL_PORT="${TOR_CONTROL_INTERNAL_PORT:-19051}"
+TOR_CONTROL_PASSWORD="${TOR_CONTROL_PASSWORD:-vidalia}"
 
-set -e
+for file in "$TOR_CONFFILE" "$PRIVOXY_CONFFILE"; do
+	if [[ ! -r "$file" ]]; then
+		echo "Configuration file $file is missing or not readable" >&2
+		exit 1
+	fi
+done
 
-if [ ! -f "${PRIVOXY_CONFFILE}" ]; then
-	echo "Configuration file ${PRIVOXY_CONFFILE} not found!"
-	exit 1
-fi
+shutdown() {
+	trap - TERM INT
+	kill -TERM "$tor_pid" "$socks_forward_pid" "$control_forward_pid" "$privoxy_pid" 2>/dev/null || true
+	wait "$tor_pid" "$socks_forward_pid" "$control_forward_pid" "$privoxy_pid" 2>/dev/null || true
+}
 
-tor -f /etc/tor/torrc &
-polipo -c /etc/polipo/polipo &
-/usr/sbin/privoxy --no-daemon --pidfile "${PRIVOXY_PIDFILE}" "${PRIVOXY_CONFFILE}"
+trap shutdown TERM INT
 
-wait -n
+cp "$TOR_CONFFILE" "$RUNTIME_TOR_CONFFILE"
+{
+	echo "ControlPort 127.0.0.1:${TOR_CONTROL_INTERNAL_PORT}"
+	tor --hash-password "$TOR_CONTROL_PASSWORD" | tail -n 1 | sed 's/^/HashedControlPassword /'
+} >> "$RUNTIME_TOR_CONFFILE"
+chmod 0600 "$RUNTIME_TOR_CONFFILE"
+
+tor -f "$RUNTIME_TOR_CONFFILE" &
+tor_pid=$!
+
+socat TCP-LISTEN:9050,fork,reuseaddr,bind=0.0.0.0 TCP:127.0.0.1:19050 &
+socks_forward_pid=$!
+
+socat TCP-LISTEN:"$TOR_CONTROL_PORT",fork,reuseaddr,bind=0.0.0.0 TCP:127.0.0.1:"$TOR_CONTROL_INTERNAL_PORT" &
+control_forward_pid=$!
+
+/usr/sbin/privoxy --no-daemon --pidfile "$PRIVOXY_PIDFILE" "$PRIVOXY_CONFFILE" &
+privoxy_pid=$!
+
+wait -n "$tor_pid" "$socks_forward_pid" "$control_forward_pid" "$privoxy_pid"
+exit_code=$?
+
+shutdown
+exit "$exit_code"
