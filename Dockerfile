@@ -9,6 +9,7 @@ RUN apt-get update \
         curl \
         obfs4proxy \
         privoxy \
+        python3 \
         snowflake-client \
         socat \
         tini \
@@ -19,13 +20,16 @@ RUN apt-get update \
 
 COPY torrc /etc/tor/torrc
 COPY privoxy/config /etc/privoxy/config
+COPY privoxy/tor-hardening.action /etc/privoxy/tor-hardening.action
+COPY tor-dashboard.py /usr/local/bin/tor-dashboard.py
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 RUN install -d -o debian-tor -g debian-tor -m 0700 /var/lib/tor \
-    && chmod 0644 /etc/tor/torrc /etc/privoxy/config \
+    && chmod 0644 /etc/tor/torrc /etc/privoxy/config /etc/privoxy/tor-hardening.action \
+    && chmod 0755 /usr/local/bin/tor-dashboard.py \
     && chmod 0755 /usr/local/bin/docker-entrypoint.sh \
     && tor --verify-config -f /etc/tor/torrc
 
 ENTRYPOINT ["tini", "--", "/usr/local/bin/docker-entrypoint.sh"]
 
-EXPOSE 8118 9050 9051
+EXPOSE 8080 8118 9050 9051

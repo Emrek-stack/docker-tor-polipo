@@ -4,6 +4,7 @@ logdir /var/log/privoxy
 actionsfile match-all.action
 actionsfile default.action
 actionsfile user.action
+actionsfile tor-hardening.action
 filterfile default.filter
 filterfile user.filter
 

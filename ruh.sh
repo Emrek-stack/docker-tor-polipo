@@ -6,6 +6,7 @@ CONTAINER_NAME="${CONTAINER_NAME:-tor-proxy}"
 CONTROL_PUBLISH_ADDR="${CONTROL_PUBLISH_ADDR:-127.0.0.1}"
 TOR_CONTROL_PORT="${TOR_CONTROL_PORT:-9051}"
 TOR_CONTROL_PASSWORD="${TOR_CONTROL_PASSWORD:-vidalia}"
+TOR_DASHBOARD_PORT="${TOR_DASHBOARD_PORT:-8080}"
 
 docker build --pull -t "$IMAGE_NAME" .
 
@@ -15,6 +16,8 @@ docker run -d \
 	--restart unless-stopped \
 	-e TOR_CONTROL_PASSWORD="$TOR_CONTROL_PASSWORD" \
 	-e TOR_CONTROL_PORT="$TOR_CONTROL_PORT" \
+	-e TOR_DASHBOARD_PORT="$TOR_DASHBOARD_PORT" \
+	-p 127.0.0.1:$TOR_DASHBOARD_PORT:$TOR_DASHBOARD_PORT \
 	-p 127.0.0.1:8118:8118 \
 	-p 127.0.0.1:9050:9050 \
 	-p "$CONTROL_PUBLISH_ADDR:$TOR_CONTROL_PORT:$TOR_CONTROL_PORT" \
@@ -28,5 +31,8 @@ Tor control settings for Vidalia .NET:
   Control port:    $TOR_CONTROL_PORT
   Control password: $TOR_CONTROL_PASSWORD
   Start local Tor if control connection fails: off
+
+Tor web dashboard:
+  http://127.0.0.1:$TOR_DASHBOARD_PORT
 
 EOF

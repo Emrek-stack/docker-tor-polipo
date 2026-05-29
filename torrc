@@ -5,8 +5,9 @@ DataDirectory /var/lib/tor
 User debian-tor
 GeoIPFile /usr/share/tor/geoip
 GeoIPv6File /usr/share/tor/geoip6
+AvoidDiskWrites 1
 
-SocksPort 127.0.0.1:19050
+SocksPort 127.0.0.1:19050 IsolateSOCKSAuth
 CookieAuthentication 0
 
 ClientTransportPlugin obfs4 exec /usr/bin/obfs4proxy

@@ -1,0 +1,12 @@
+{ \
++crunch-client-header{Forwarded:} \
++crunch-client-header{X-Forwarded-For:} \
++crunch-client-header{X-Real-IP:} \
++crunch-client-header{Client-IP:} \
++crunch-client-header{Proxy-Connection:} \
++crunch-client-header{Via:} \
++change-x-forwarded-for{block} \
++hide-from-header{block} \
++hide-referrer{conditional-block} \
+}
+/

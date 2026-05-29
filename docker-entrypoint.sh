@@ -8,6 +8,12 @@ PRIVOXY_PIDFILE=/run/privoxy.pid
 TOR_CONTROL_PORT="${TOR_CONTROL_PORT:-9051}"
 TOR_CONTROL_INTERNAL_PORT="${TOR_CONTROL_INTERNAL_PORT:-19051}"
 TOR_CONTROL_PASSWORD="${TOR_CONTROL_PASSWORD:-vidalia}"
+TOR_DASHBOARD_PORT="${TOR_DASHBOARD_PORT:-8080}"
+tor_pid=
+socks_forward_pid=
+control_forward_pid=
+privoxy_pid=
+dashboard_pid=
 
 for file in "$TOR_CONFFILE" "$PRIVOXY_CONFFILE"; do
 	if [[ ! -r "$file" ]]; then
@@ -18,8 +24,8 @@ done
 
 shutdown() {
 	trap - TERM INT
-	kill -TERM "$tor_pid" "$socks_forward_pid" "$control_forward_pid" "$privoxy_pid" 2>/dev/null || true
-	wait "$tor_pid" "$socks_forward_pid" "$control_forward_pid" "$privoxy_pid" 2>/dev/null || true
+	kill -TERM "$tor_pid" "$socks_forward_pid" "$control_forward_pid" "$privoxy_pid" "$dashboard_pid" 2>/dev/null || true
+	wait "$tor_pid" "$socks_forward_pid" "$control_forward_pid" "$privoxy_pid" "$dashboard_pid" 2>/dev/null || true
 }
 
 trap shutdown TERM INT
@@ -43,7 +49,17 @@ control_forward_pid=$!
 /usr/sbin/privoxy --no-daemon --pidfile "$PRIVOXY_PIDFILE" "$PRIVOXY_CONFFILE" &
 privoxy_pid=$!
 
-wait -n "$tor_pid" "$socks_forward_pid" "$control_forward_pid" "$privoxy_pid"
+TOR_CONTROL_HOST=127.0.0.1 \
+TOR_CONTROL_PORT="$TOR_CONTROL_INTERNAL_PORT" \
+TOR_CONTROL_PASSWORD="$TOR_CONTROL_PASSWORD" \
+TOR_SOCKS_HOST=127.0.0.1 \
+TOR_SOCKS_PORT=19050 \
+TOR_DASHBOARD_HOST=0.0.0.0 \
+TOR_DASHBOARD_PORT="$TOR_DASHBOARD_PORT" \
+	/usr/local/bin/tor-dashboard.py &
+dashboard_pid=$!
+
+wait -n "$tor_pid" "$socks_forward_pid" "$control_forward_pid" "$privoxy_pid" "$dashboard_pid"
 exit_code=$?
 
 shutdown
