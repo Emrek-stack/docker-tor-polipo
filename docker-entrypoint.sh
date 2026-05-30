@@ -5,6 +5,7 @@ TOR_CONFFILE=/etc/tor/torrc
 RUNTIME_TOR_CONFFILE=/run/torrc
 PRIVOXY_CONFFILE=/etc/privoxy/config
 PRIVOXY_PIDFILE=/run/privoxy.pid
+TOR_LOG_FILE=/run/tor-notice.log
 TOR_CONTROL_PORT="${TOR_CONTROL_PORT:-9051}"
 TOR_CONTROL_INTERNAL_PORT="${TOR_CONTROL_INTERNAL_PORT:-19051}"
 TOR_CONTROL_PASSWORD="${TOR_CONTROL_PASSWORD:-vidalia}"
@@ -31,8 +32,11 @@ shutdown() {
 trap shutdown TERM INT
 
 cp "$TOR_CONFFILE" "$RUNTIME_TOR_CONFFILE"
+touch "$TOR_LOG_FILE"
+chown debian-tor:debian-tor "$TOR_LOG_FILE"
 {
 	echo "ControlPort 127.0.0.1:${TOR_CONTROL_INTERNAL_PORT}"
+	echo "Log notice file ${TOR_LOG_FILE}"
 	tor --hash-password "$TOR_CONTROL_PASSWORD" | tail -n 1 | sed 's/^/HashedControlPassword /'
 } >> "$RUNTIME_TOR_CONFFILE"
 chmod 0600 "$RUNTIME_TOR_CONFFILE"
@@ -54,6 +58,7 @@ TOR_CONTROL_PORT="$TOR_CONTROL_INTERNAL_PORT" \
 TOR_CONTROL_PASSWORD="$TOR_CONTROL_PASSWORD" \
 TOR_SOCKS_HOST=127.0.0.1 \
 TOR_SOCKS_PORT=19050 \
+TOR_LOG_FILE="$TOR_LOG_FILE" \
 TOR_DASHBOARD_HOST=0.0.0.0 \
 TOR_DASHBOARD_PORT="$TOR_DASHBOARD_PORT" \
 	/usr/local/bin/tor-dashboard.py &

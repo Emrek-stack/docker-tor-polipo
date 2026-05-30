@@ -46,7 +46,21 @@ Open the local dashboard after starting the container:
 http://127.0.0.1:8080
 ```
 
-The dashboard reads Tor's control port from inside the container and shows bootstrap progress, Tor version, current circuits, relay IP addresses, country names, country codes and country flags. It also checks the current public Tor exit IP through the container SOCKS proxy and shows active streams with their current exit relay when Tor exposes that mapping. It also has a New Identity button that sends `SIGNAL NEWNYM`.
+The dashboard reads Tor's control port from inside the container and shows bootstrap progress, Tor version, current circuits, relay IP addresses, relay flags, bandwidth, country names, country codes and country flags. It also checks the current public Tor exit IP through the container SOCKS proxy, enriches that IP with the public `ipwho.is` GeoIP API, and shows active streams with their current exit relay when Tor exposes that mapping. If the public GeoIP lookup fails, it falls back to Tor's local GeoIP database for the country code.
+
+Dashboard controls:
+
+- New Identity, automatic identity rotation and circuit close actions
+- Exit country selection through Tor `ExitNodes` and `StrictNodes`
+- Health checks for bootstrap, ControlPort, SOCKS, Privoxy, public exit and Tor verification
+- DNS leak check through SOCKS hostname mode
+- Browser-side WebRTC candidate check
+- Runtime bridge enable/disable through Tor `UseBridges` and `Bridge`
+- Tor notice log viewer plus dashboard action events
+
+Dashboard changes made through the control port are runtime changes inside the running container. Put permanent bridge or exit policy defaults in `torrc` if you need them to survive container replacement.
+
+The dashboard frontend is a self-contained React app served by the container. React and ReactDOM are copied into the image during the Docker build, so the browser does not need a CDN connection to load the UI.
 
 Set a different dashboard port if needed:
 
