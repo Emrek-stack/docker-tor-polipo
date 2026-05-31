@@ -586,6 +586,29 @@ def dashboard_logs():
     return [{"time": "", "message": line.rstrip("\n")} for line in combined[-250:]]
 
 
+def classified_logs():
+    items = []
+    for item in dashboard_logs():
+        message = item["message"]
+        lower = message.lower()
+        level = "info"
+        category = "general"
+        if "warn" in lower or "failed" in lower or "error" in lower:
+            level = "warn"
+        if "bootstrapped" in lower:
+            category = "bootstrap"
+        elif "bridge" in lower:
+            category = "bridge"
+        elif "circuit" in lower:
+            category = "circuit"
+        elif "control" in lower:
+            category = "control"
+        elif "dashboard:" in lower:
+            category = "dashboard"
+        items.append({"time": item["time"], "message": message, "level": level, "category": category})
+    return items
+
+
 def control_quote(value):
     return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
 
@@ -693,11 +716,17 @@ tr:last-child td { border-bottom: 0; }
 .health { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .health-item { background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; padding: 8px; }
 .toolbar { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; }
+.steps { display: grid; gap: 10px; }
+.step { background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.step.active { border-color: var(--accent); }
+.circuit-line { align-items: stretch; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.hop-title { color: var(--muted); font-size: 12px; text-transform: uppercase; }
+.split { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
 @media (max-width: 900px) {
   main { padding: 16px; }
   header { align-items: flex-start; flex-direction: column; }
   .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .two, .health { grid-template-columns: 1fr; }
+  .two, .health, .split, .circuit-line { grid-template-columns: 1fr; }
   table, thead, tbody, th, td, tr { display: block; }
   thead { display: none; }
   td { padding: 8px 0; }
@@ -868,16 +897,37 @@ def health_checks(control, info, exit_info):
 
 
 def tor_settings(control):
-    values = control_getconf(control, "ExitNodes", "StrictNodes", "UseBridges", "Bridge")
+    values = control_getconf(control, "ExitNodes", "ExcludeExitNodes", "StrictNodes", "UseBridges", "Bridge")
     bridges = values.get("Bridge", "")
     if isinstance(bridges, str):
         bridges = [line for line in bridges.splitlines() if line]
     return {
         "exitNodes": values.get("ExitNodes", ""),
+        "excludeExitNodes": values.get("ExcludeExitNodes", ""),
         "strictNodes": values.get("StrictNodes", "0"),
         "useBridges": values.get("UseBridges", "0"),
         "bridges": bridges,
     }
+
+
+def risk_summary(settings, exit_info):
+    risks = []
+    risks.append({"name": "Dashboard Binding", "level": "ok", "detail": "ruh.sh publishes dashboard on 127.0.0.1 by default"})
+    risks.append({"name": "Control Password", "level": "warn" if CONTROL_PASSWORD == "vidalia" else "ok", "detail": "default password" if CONTROL_PASSWORD == "vidalia" else "custom password"})
+    risks.append({"name": "Tor Exit", "level": "ok" if exit_info.get("isTor") else "warn", "detail": "IsTor={}".format(str(bool(exit_info.get("isTor"))).lower())})
+    risks.append({"name": "Exit Policy", "level": "warn" if settings.get("strictNodes") == "1" else "ok", "detail": settings.get("exitNodes") or "any country"})
+    risks.append({"name": "Bridges", "level": "ok" if settings.get("useBridges") == "1" else "info", "detail": "enabled" if settings.get("useBridges") == "1" else "disabled"})
+    return risks
+
+
+def apply_profile(control, profile):
+    if profile == "default":
+        control.command("RESETCONF ExitNodes ExcludeExitNodes StrictNodes UseBridges Bridge")
+    elif profile == "stable":
+        control.command("RESETCONF ExitNodes ExcludeExitNodes StrictNodes")
+    else:
+        raise ValueError("Unknown profile")
+    record_event("Profile applied: {}".format(profile))
 
 
 def tor_status():
@@ -922,6 +972,7 @@ def tor_status():
                 "exitRelay": relays[-1] if relays else {},
             })
         exit_info = current_exit(control)
+        settings = tor_settings(control)
         return {
             "version": info.get("version", ""),
             "bootstrap": parse_bootstrap(info.get("status/bootstrap-phase", "")),
@@ -929,12 +980,35 @@ def tor_status():
             "streams": streams,
             "currentExit": exit_info,
             "health": health_checks(control, info, exit_info),
-            "settings": tor_settings(control),
-            "events": dashboard_logs(),
+            "settings": settings,
+            "events": classified_logs(),
+            "risks": risk_summary(settings, exit_info),
             "error": "",
         }
     finally:
         control.close()
+
+
+def timed_curl(name, args):
+    start = time.time()
+    try:
+        completed = subprocess.run(args, check=True, capture_output=True, text=True, timeout=20)
+        elapsed = int((time.time() - start) * 1000)
+        return {"name": name, "ok": True, "ms": elapsed, "detail": completed.stdout[:500]}
+    except Exception as exc:
+        elapsed = int((time.time() - start) * 1000)
+        return {"name": name, "ok": False, "ms": elapsed, "detail": str(exc)}
+
+
+def run_proxy_tests():
+    tests = [
+        timed_curl("SOCKS Tor check", ["curl", "-fsS", "--max-time", "15", "--socks5-hostname", "{}:{}".format(TOR_SOCKS_HOST, TOR_SOCKS_PORT), "https://check.torproject.org/api/ip"]),
+        timed_curl("HTTP Privoxy Tor check", ["curl", "-fsS", "--max-time", "15", "--proxy", "http://127.0.0.1:8118", "https://check.torproject.org/api/ip"]),
+        timed_curl("SOCKS remote DNS", ["curl", "-fsS", "--max-time", "15", "--socks5-hostname", "{}:{}".format(TOR_SOCKS_HOST, TOR_SOCKS_PORT), "https://example.com/"]),
+        timed_curl("GeoIP lookup", ["curl", "-fsS", "--max-time", "15", "--socks5-hostname", "{}:{}".format(TOR_SOCKS_HOST, TOR_SOCKS_PORT), "https://ipwho.is/"]),
+    ]
+    record_event("Proxy test center ran {} checks".format(len(tests)))
+    return {"ok": all(test["ok"] for test in tests), "tests": tests}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -1021,6 +1095,12 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as exc:
                 self.send_json({"version": "", "bootstrap": {}, "circuits": [], "streams": [], "currentExit": {}, "error": str(exc)}, status=503)
             return
+        if self.path == "/api/proxy-tests":
+            try:
+                self.send_json(run_proxy_tests())
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc), "tests": []}, status=503)
+            return
         self.send_error(404)
 
     def do_POST(self):
@@ -1045,14 +1125,36 @@ class Handler(BaseHTTPRequestHandler):
                     cc = str(item).strip().lower()
                     if re.fullmatch(r"[a-z]{2}", cc):
                         countries.append("{" + cc + "}")
+                excluded = []
+                for item in body.get("excluded", []):
+                    cc = str(item).strip().lower()
+                    if re.fullmatch(r"[a-z]{2}", cc):
+                        excluded.append("{" + cc + "}")
                 control = TorControl()
                 try:
-                    if countries:
-                        control.command("SETCONF ExitNodes={} StrictNodes={}".format(control_quote(",".join(countries)), "1" if body.get("strict", True) else "0"))
-                        record_event("Exit country policy set to {}".format(",".join(countries)))
+                    if countries or excluded:
+                        args = ["StrictNodes={}".format("1" if body.get("strict", True) else "0")]
+                        args.append("ExitNodes={}".format(control_quote(",".join(countries))) if countries else "ExitNodes")
+                        args.append("ExcludeExitNodes={}".format(control_quote(",".join(excluded))) if excluded else "ExcludeExitNodes")
+                        control.command("SETCONF {}".format(" ".join(args)))
+                        record_event("Exit policy set preferred={} excluded={}".format(",".join(countries) or "-", ",".join(excluded) or "-"))
                     else:
-                        control.command("RESETCONF ExitNodes StrictNodes")
-                        record_event("Exit country policy cleared")
+                        control.command("RESETCONF ExitNodes ExcludeExitNodes StrictNodes")
+                        record_event("Exit policy cleared")
+                    EXIT_CACHE["updated"] = 0
+                finally:
+                    control.close()
+                self.send_json({"ok": True})
+            except Exception as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+            return
+        if self.path == "/api/profile":
+            try:
+                body = self.read_json()
+                control = TorControl()
+                try:
+                    apply_profile(control, str(body.get("profile", "")))
+                    control.command("SIGNAL NEWNYM")
                     EXIT_CACHE["updated"] = 0
                 finally:
                     control.close()

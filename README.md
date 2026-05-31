@@ -51,12 +51,16 @@ The dashboard reads Tor's control port from inside the container and shows boots
 Dashboard controls:
 
 - New Identity, automatic identity rotation and circuit close actions
-- Exit country selection through Tor `ExitNodes` and `StrictNodes`
+- Exit policy builder with preferred countries, excluded countries and `StrictNodes`
+- Circuit visualizer showing Guard > Middle > Exit paths with active stream highlighting
 - Health checks for bootstrap, ControlPort, SOCKS, Privoxy, public exit and Tor verification
+- Proxy test center for SOCKS, HTTP Privoxy, remote DNS and GeoIP checks
 - DNS leak check through SOCKS hostname mode
 - Browser-side WebRTC candidate check
-- Runtime bridge enable/disable through Tor `UseBridges` and `Bridge`
+- Runtime bridge wizard through Tor `UseBridges` and `Bridge`
 - Tor notice log viewer plus dashboard action events
+- Event center that classifies bootstrap, bridge, circuit, control and dashboard events
+- Risk cards for dashboard binding, default control password, Tor exit status, strict exit policy and bridges
 
 Dashboard changes made through the control port are runtime changes inside the running container. Put permanent bridge or exit policy defaults in `torrc` if you need them to survive container replacement.
 
